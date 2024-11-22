@@ -3,10 +3,18 @@
 #include <direct.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <commdlg.h>
+
+void RestoreModsIfDisabled() {
+    MoveFile("mods_disabled", "mods");
+}
 
 void LaunchGame(const char* gamePath, bool runAsAdmin, bool withoutMods) {
     if (withoutMods) {
-        MoveFile("mods", "mods_disabled");
+        if (!MoveFile("mods", "mods_disabled")) {
+            MessageBox(NULL, "Failed to disable mods folder.", "Error", MB_ICONERROR | MB_OK);
+            return;
+        }
     }
 
     SHELLEXECUTEINFO sei = { 0 };
@@ -19,6 +27,8 @@ void LaunchGame(const char* gamePath, bool runAsAdmin, bool withoutMods) {
 
     if (!ShellExecuteEx(&sei)) {
         MessageBox(NULL, "Failed to launch the game.", "Error", MB_ICONERROR | MB_OK);
+        if (withoutMods) RestoreModsIfDisabled();
+        return;
     }
 
     if (sei.hProcess) {
@@ -26,8 +36,22 @@ void LaunchGame(const char* gamePath, bool runAsAdmin, bool withoutMods) {
         CloseHandle(sei.hProcess);
     }
 
-    if (withoutMods) {
-        MoveFile("mods_disabled", "mods");
+    if (withoutMods) RestoreModsIfDisabled();
+}
+
+void BrowseForGamePath(char* gamePathBuffer, size_t bufferSize) {
+    OPENFILENAME ofn = { 0 };
+    ofn.lStructSize = sizeof(OPENFILENAME);
+    ofn.hwndOwner = NULL;
+    ofn.lpstrFilter = "Executables\0*.exe\0All Files\0*.*\0";
+    ofn.lpstrFile = gamePathBuffer;
+    ofn.nMaxFile = bufferSize;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+
+    if (GetOpenFileName(&ofn)) {
+        MessageBox(NULL, "Game path selected successfully.", "Info", MB_ICONINFORMATION | MB_OK);
+    } else {
+        MessageBox(NULL, "No file selected.", "Warning", MB_ICONWARNING | MB_OK);
     }
 }
 
@@ -42,20 +66,25 @@ void CreateModsFolder() {
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    static char gamePath[256] = "GTAVLauncher.exe";
+
     switch (uMsg) {
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
         case 1:
-            LaunchGame("GTAVLauncher.exe", false, false);
+            LaunchGame(gamePath, false, false);
             break;
         case 2:
-            LaunchGame("GTAVLauncher.exe", true, false);
+            LaunchGame(gamePath, true, false);
             break;
         case 3:
-            LaunchGame("GTAVLauncher.exe", false, true);
+            LaunchGame(gamePath, false, true);
             break;
         case 4:
             CreateModsFolder();
+            break;
+        case 5:
+            BrowseForGamePath(gamePath, sizeof(gamePath));
             break;
         }
         break;
@@ -65,6 +94,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+void CreateButton(HWND hwnd, const char* text, int x, int y, int width, int height, int id, HINSTANCE hInstance) {
+    CreateWindow("BUTTON", text, WS_VISIBLE | WS_CHILD,
+                 x, y, width, height, hwnd, (HMENU)id, hInstance, NULL);
 }
 
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -82,7 +116,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
         CLASS_NAME,
         "GTA V Launcher",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 300, 250,
+        CW_USEDEFAULT, CW_USEDEFAULT, 300, 300,
         NULL, NULL, hInstance, NULL
     );
 
@@ -90,20 +124,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
         return 0;
     }
 
-    CreateWindow("STATIC", "GTA V Launcher", WS_VISIBLE | WS_CHILD | SS_CENTER,
-                 50, 10, 200, 20, hwnd, NULL, hInstance, NULL);
-
-    CreateWindow("BUTTON", "Run Normally", WS_VISIBLE | WS_CHILD,
-                 50, 30, 200, 30, hwnd, (HMENU)1, hInstance, NULL);
-
-    CreateWindow("BUTTON", "Run as Admin", WS_VISIBLE | WS_CHILD,
-                 50, 70, 200, 30, hwnd, (HMENU)2, hInstance, NULL);
-
-    CreateWindow("BUTTON", "Run Without Mods", WS_VISIBLE | WS_CHILD,
-                 50, 110, 200, 30, hwnd, (HMENU)3, hInstance, NULL);
-
-    CreateWindow("BUTTON", "Create Mods Folder", WS_VISIBLE | WS_CHILD,
-                 50, 150, 200, 30, hwnd, (HMENU)4, hInstance, NULL);
+    CreateButton(hwnd, "Run Normally", 50, 30, 200, 30, 1, hInstance);
+    CreateButton(hwnd, "Run as Admin", 50, 70, 200, 30, 2, hInstance);
+    CreateButton(hwnd, "Run Without Mods", 50, 110, 200, 30, 3, hInstance);
+    CreateButton(hwnd, "Create Mods Folder", 50, 150, 200, 30, 4, hInstance);
+    CreateButton(hwnd, "Select Game Path", 50, 190, 200, 30, 5, hInstance);
 
     ShowWindow(hwnd, SW_NORMAL);
 
@@ -115,4 +140,3 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
     return 0;
 }
-
