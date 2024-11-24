@@ -4,15 +4,29 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <commdlg.h>
+#include <stdio.h>
+
+void LogMessage(const char* message) {
+    FILE* logFile = fopen("game_launcher.log", "a");
+    if (logFile) {
+        fprintf(logFile, "%s\n", message);
+        fclose(logFile);
+    }
+}
 
 void RestoreModsIfDisabled() {
-    MoveFile("mods_disabled", "mods");
+    if (!MoveFile("mods_disabled", "mods")) {
+        LogMessage("Failed to restore mods folder.");
+    }
 }
 
 void LaunchGame(const char* gamePath, bool runAsAdmin, bool withoutMods) {
     if (withoutMods) {
         if (!MoveFile("mods", "mods_disabled")) {
-            MessageBox(NULL, "Failed to disable mods folder.", "Error", MB_ICONERROR | MB_OK);
+            DWORD dwError = GetLastError();
+            char errorMessage[256];
+            sprintf(errorMessage, "Failed to disable mods folder. Error code: %lu", dwError);
+            MessageBox(NULL, errorMessage, "Error", MB_ICONERROR | MB_OK);
             return;
         }
     }
@@ -26,11 +40,13 @@ void LaunchGame(const char* gamePath, bool runAsAdmin, bool withoutMods) {
     sei.hwnd = NULL;
 
     if (!ShellExecuteEx(&sei)) {
+        LogMessage("Game launch failed.");
         MessageBox(NULL, "Failed to launch the game.", "Error", MB_ICONERROR | MB_OK);
         if (withoutMods) RestoreModsIfDisabled();
         return;
     }
 
+    LogMessage("Game launched successfully.");
     if (sei.hProcess) {
         WaitForSingleObject(sei.hProcess, INFINITE);
         CloseHandle(sei.hProcess);
@@ -49,6 +65,8 @@ void BrowseForGamePath(char* gamePathBuffer, size_t bufferSize) {
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
 
     if (GetOpenFileName(&ofn)) {
+        strncpy(gamePathBuffer, ofn.lpstrFile, bufferSize);
+        gamePathBuffer[bufferSize - 1] = '\0';  // Ensure null-termination
         MessageBox(NULL, "Game path selected successfully.", "Info", MB_ICONINFORMATION | MB_OK);
     } else {
         MessageBox(NULL, "No file selected.", "Warning", MB_ICONWARNING | MB_OK);
@@ -61,7 +79,9 @@ void CreateModsFolder() {
     } else if (errno == EEXIST) {
         MessageBox(NULL, "The 'mods' folder already exists.", "Info", MB_ICONINFORMATION | MB_OK);
     } else {
-        MessageBox(NULL, strerror(errno), "Error Creating Folder", MB_ICONERROR | MB_OK);
+        char errorMessage[256];
+        snprintf(errorMessage, sizeof(errorMessage), "Error creating folder: %s", strerror(errno));
+        MessageBox(NULL, errorMessage, "Error Creating Folder", MB_ICONERROR | MB_OK);
     }
 }
 
@@ -71,21 +91,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     switch (uMsg) {
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
-        case 1:
-            LaunchGame(gamePath, false, false);
-            break;
-        case 2:
-            LaunchGame(gamePath, true, false);
-            break;
-        case 3:
-            LaunchGame(gamePath, false, true);
-            break;
-        case 4:
-            CreateModsFolder();
-            break;
-        case 5:
-            BrowseForGamePath(gamePath, sizeof(gamePath));
-            break;
+        case 1: LaunchGame(gamePath, false, false); break;
+        case 2: LaunchGame(gamePath, true, false); break;
+        case 3: LaunchGame(gamePath, false, true); break;
+        case 4: CreateModsFolder(); break;
+        case 5: BrowseForGamePath(gamePath, sizeof(gamePath)); break;
         }
         break;
 
